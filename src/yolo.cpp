@@ -37,47 +37,54 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
     std::vector<torch::jit::IValue> input = std::vector<torch::jit::IValue>{tensor};
     
     // forward
-    auto output = yolo.forward(input).toTuple();
-    at::Tensor preds = output->elements()[0].toTensor();
+    auto ps = yolo.forward(input).toTuple()->elements()[0].toTensor().select(0,0);
+    //std::cout << ps.sizes() << std::endl;
+    std::vector<float> output(ps.data_ptr<float>(), ps.data_ptr<float>() + ps.numel());
+    //std::cout << v.size() << std::endl;
+    //std::cout << v[0] << std::endl;
 
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
+    auto finish = std::chrono::high_resolution_clock::now();
     // filter boxes
 	std::vector<float> confidences;
 	std::vector<cv::Rect> boxes;
 	std::vector<int> classIds;
-    const int proposals = 25200; // default for 640x640 images
-
-    omp_set_num_threads(4);
+    omp_set_num_threads(2);
     #pragma omp parallel for
-    for(int i = 1; i <= proposals; i++){
-        at::Tensor pred = preds.slice(1,i-1,i);
-        float box_score = pred.index({0,0,4}).item<float>();
+    for(int i = 1; i <= 25200; i++){
+        at::Tensor pred = ps.select(0,i-1);
+        float box_score = pred.index({4}).item<float>();
         if(box_score > this->confThreshold){// larger than confidence threshold
-            at::Tensor scores = pred.slice(2,5,10);
-            float max = torch::max(scores).item<float>();
-            at::Tensor max_index = (scores == max).nonzero();
+            std::tuple<at::Tensor, at::Tensor> res = pred.slice(0,5,10).topk(1);
+            float max = std::get<0>(res).item<float>();
+            int max_index = std::get<1>(res).item<int>();
             max *= box_score;
-            
             if(max > this->confThreshold) { // conf threshold
 
-                const int class_id = max_index.index({0,2}).item<int>();
-
-                float cx = pred.index({0,0,0}).item<float>() * ratiow;
-                float cy = pred.index({0,0,1}).item<float>() * ratioh;
-                float w = pred.index({0,0,2}).item<float>() * ratiow;
-                float h = pred.index({0,0,3}).item<float>() * ratioh;
-                int left = int(cx - 0.5*w);
-                int top = int(cy - 0.5*h);
-                cv::Rect b = cv::Rect(left, top, (int)(w), (int)(h));
+                float w = pred.index({2}).item<float>() * ratiow;
+                float h = pred.index({3}).item<float>() * ratioh;
+                int left = int(pred.index({0}).item<float>() * ratiow - 0.5*w);
+                int top = int(pred.index({1}).item<float>() * ratioh - 0.5*h);
 
                 #pragma omp critical
                 {
-                    confidences.push_back((float)max);
-                    boxes.push_back(b);
-                    classIds.push_back(class_id);
+                    confidences.push_back(max);
+                    boxes.emplace_back(left, top, (int)(w), (int)(h));
+                    classIds.push_back(max_index);
                 }
             } 
         }
     }
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_double = t2 - t1;
+    std::cout << ms_double.count() << "yolo for loop took \n";
+
+    //start = std::chrono::high_resolution_clock::now();
+    //finish = std::chrono::high_resolution_clock::now();
+    //std::chrono::duration<double, std::milli> ms = finish - start;
+    //std::cout << ms.count() << " second section\n";
+
 	std::vector<int> indices;	
     std::vector<cone_t> cones;
 	cv::dnn::NMSBoxes(boxes, confidences, this->confThreshold, this->nmsThreshold, indices);
