@@ -68,13 +68,13 @@ int main(int argc, char ** argv){
     cv::Mat frame = cv::imread("frame.jpeg");
     cv::cvtColor(frame,frame, cv::COLOR_RGB2BGR ); //opencv uses bgr
 
-    //auto t1 = std::chrono::high_resolution_clock::now();
+    auto t1 = std::chrono::high_resolution_clock::now();
 
     std::vector<cone_t> cones = yolo.detect(frame);
 
-    //auto t2 = std::chrono::high_resolution_clock::now();
-    //std::chrono::duration<double, std::milli> ms_double = t2 - t1;
-    //std::cout << ms_double.count() << "yolo took \n";
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_double = t2 - t1;
+    std::cout << ms_double.count() << "yolo in total took \n";
 
     //t1 = std::chrono::high_resolution_clock::now();
     for(cone_t & cone: cones){

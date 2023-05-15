@@ -37,36 +37,33 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
     std::vector<torch::jit::IValue> input = std::vector<torch::jit::IValue>{tensor};
     
     // forward
+    auto start = std::chrono::high_resolution_clock::now();
     auto ps = yolo.forward(input).toTuple()->elements()[0].toTensor().select(0,0);
     //std::cout << ps.sizes() << std::endl;
     std::vector<float> output(ps.data_ptr<float>(), ps.data_ptr<float>() + ps.numel());
-    //std::cout << v.size() << std::endl;
-    //std::cout << v[0] << std::endl;
+    auto finish = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms = finish - start;
+    std::cout << ms.count() << " yolo forward took\n";
 
     auto t1 = std::chrono::high_resolution_clock::now();
-    auto start = std::chrono::high_resolution_clock::now();
-    auto finish = std::chrono::high_resolution_clock::now();
     // filter boxes
 	std::vector<float> confidences;
 	std::vector<cv::Rect> boxes;
 	std::vector<int> classIds;
     omp_set_num_threads(2);
     #pragma omp parallel for
-    for(int i = 1; i <= 25200; i++){
-        at::Tensor pred = ps.select(0,i-1);
-        float box_score = pred.index({4}).item<float>();
+    for(int i = 0; i < 25200; i++){
+        std::vector<float> pred(output.begin()+10*i, output.begin()+10*(i+1));
+        float box_score = pred[4]; 
         if(box_score > this->confThreshold){// larger than confidence threshold
-            std::tuple<at::Tensor, at::Tensor> res = pred.slice(0,5,10).topk(1);
-            float max = std::get<0>(res).item<float>();
-            int max_index = std::get<1>(res).item<int>();
-            max *= box_score;
+            auto maxIter = std::max_element(pred.begin()+5,pred.end());
+            float max = *maxIter;
+            int max_index = std::distance(pred.begin()+5,maxIter);
             if(max > this->confThreshold) { // conf threshold
-
-                float w = pred.index({2}).item<float>() * ratiow;
-                float h = pred.index({3}).item<float>() * ratioh;
-                int left = int(pred.index({0}).item<float>() * ratiow - 0.5*w);
-                int top = int(pred.index({1}).item<float>() * ratioh - 0.5*h);
-
+                float w = pred[2]*ratiow; 
+                float h = pred[3]*ratioh;
+                int left = int(pred[0]* ratiow - 0.5*w);
+                int top = int(pred[1]* ratioh - 0.5*h);
                 #pragma omp critical
                 {
                     confidences.push_back(max);
@@ -76,9 +73,6 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
             } 
         }
     }
-    auto t2 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> ms_double = t2 - t1;
-    std::cout << ms_double.count() << "yolo for loop took \n";
 
     //start = std::chrono::high_resolution_clock::now();
     //finish = std::chrono::high_resolution_clock::now();
@@ -114,6 +108,9 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
             numBoxesAdded++;
         }
     }
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_double = t2 - t1;
+    std::cout << ms_double.count() << "yolo post processing took \n";
 
 	return cones;
 }
