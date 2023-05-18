@@ -1,5 +1,4 @@
 #include "yolo.hpp"
-#include <omp.h>
 
 YOLOV7::YOLOV7(const Net_config config) {
 
@@ -50,8 +49,6 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
 	std::vector<float> confidences;
 	std::vector<cv::Rect> boxes;
 	std::vector<int> classIds;
-    omp_set_num_threads(2);
-    #pragma omp parallel for
     for(int i = 0; i < 25200; i++){
         std::vector<float> pred(output.begin()+10*i, output.begin()+10*(i+1));
         float box_score = pred[4]; 
@@ -64,12 +61,9 @@ std::vector<cone_t> YOLOV7::detect(const cv::Mat& frame)
                 float h = pred[3]*ratioh;
                 int left = int(pred[0]* ratiow - 0.5*w);
                 int top = int(pred[1]* ratioh - 0.5*h);
-                #pragma omp critical
-                {
                     confidences.push_back(max);
                     boxes.emplace_back(left, top, (int)(w), (int)(h));
                     classIds.push_back(max_index);
-                }
             } 
         }
     }

@@ -88,7 +88,7 @@ int main(int argc, char ** argv){
     for(cone_t & cone: cones){
       drawPred(cone,frame);
     }
-    cv::imwrite( "out.jpeg", frame );
+    cv::imwrite( "output.jpeg", frame );
 
     ////read the video
     //std::string inputFile = "../../data/short.mp4";
